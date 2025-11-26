@@ -1,18 +1,41 @@
 from langchain_core.messages import HumanMessage, AIMessage
 import os
+import json
 from dotenv import dotenv_values
 import streamlit as st
 from agent import agent
 
 # ============================================================================
-# Simple Authentication Configuration
+# User Storage Configuration
 # ============================================================================
-# You can add more users here or connect to a database later
-VALID_USERS = {
-    "admin": "admin123",
-    "user": "password123",
-    "test": "test123"
-}
+USERS_FILE = "users.json"
+
+def load_users():
+    """Load users from JSON file."""
+    try:
+        with open(USERS_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        # Create file with default users if it doesn't exist
+        default_users = {
+            "admin": "admin123",
+            "user": "password123",
+            "test": "test123"
+        }
+        save_users(default_users)
+        return default_users
+    except json.JSONDecodeError:
+        return {}
+
+def save_users(users_dict):
+    """Save users to JSON file."""
+    try:
+        with open(USERS_FILE, 'w') as f:
+            json.dump(users_dict, f, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"Error saving users: {str(e)}")
+        return False
 # ============================================================================
 
 # Load environment variables
@@ -41,14 +64,52 @@ st.set_page_config(
 # Authentication Functions
 # ============================================================================
 
-def simple_login(username: str, password: str) -> tuple[bool, str]:
-    """Simple authentication check."""
-    if username in VALID_USERS and VALID_USERS[username] == password:
+def register_user(username: str, password: str) -> tuple[bool, str]:
+    """Register a new user."""
+    # Validate inputs
+    if not username or not password:
+        return False, "Username and password cannot be empty"
+    
+    if len(username) < 3:
+        return False, "Username must be at least 3 characters long"
+    
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters long"
+    
+    # Check for special characters in username
+    if not username.isalnum():
+        return False, "Username can only contain letters and numbers"
+    
+    # Load existing users
+    users = load_users()
+    
+    # Check if user already exists
+    if username in users:
+        return False, "User already registered! Please login instead."
+    
+    # Add new user
+    users[username] = password
+    
+    # Save to file
+    if save_users(users):
+        return True, "Registration successful! Please login with your credentials."
+    else:
+        return False, "Error saving user data. Please try again."
+
+
+def login_user(username: str, password: str) -> tuple[bool, str]:
+    """Authenticate existing user."""
+    users = load_users()
+    
+    if username not in users:
+        return False, "User not found! Please register first."
+    
+    if users[username] == password:
         st.session_state.auth_token = "authenticated"
         st.session_state.username = username
         return True, "Login successful!"
     else:
-        return False, "Invalid username or password"
+        return False, "Invalid password!"
 
 
 def logout():
@@ -64,34 +125,80 @@ if "auth_token" not in st.session_state:
     st.session_state.auth_token = None
 if "username" not in st.session_state:
     st.session_state.username = None
+if "show_register" not in st.session_state:
+    st.session_state.show_register = False
 
 # ============================================================================
-# Login Gate: Show login page if not authenticated
+# Login/Registration Gate
 # ============================================================================
 
 if st.session_state.auth_token is None:
-    st.title("🔐 Nyaya-BOT Login")
-    st.markdown("Please login to access the legal assistant chatbot")
+    st.title("🔐 Nyaya-BOT Authentication")
     
-    with st.form("login_form"):
-        username = st.text_input("Username", placeholder="Enter your username")
-        password = st.text_input("Password", type="password", placeholder="Enter your password")
-        submit_button = st.form_submit_button("Login", use_container_width=True)
-        
-        if submit_button:
-            if not username or not password:
-                st.error("⚠️ Please enter both username and password")
-            else:
-                success, message = simple_login(username, password)
-                
-                if success:
-                    st.success(f"✅ {message}")
-                    st.rerun()
-                else:
-                    st.error(f"❌ {message}")
+    # Toggle between Login and Register
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔑 Login", use_container_width=True, type="primary" if not st.session_state.show_register else "secondary"):
+            st.session_state.show_register = False
+            st.rerun()
+    with col2:
+        if st.button("📝 Register", use_container_width=True, type="primary" if st.session_state.show_register else "secondary"):
+            st.session_state.show_register = True
+            st.rerun()
     
     st.markdown("---")
-    st.info("**Default credentials:**\n- Username: `admin` / Password: `admin123`\n- Username: `user` / Password: `password123`")
+    
+    if st.session_state.show_register:
+        # ==================== REGISTRATION FORM ====================
+        st.subheader("📝 Create New Account")
+        st.markdown("Fill in the details below to register")
+        
+        with st.form("register_form"):
+            new_username = st.text_input("Choose Username", placeholder="Enter a username (letters/numbers only)")
+            new_password = st.text_input("Choose Password", type="password", placeholder="Enter a password (min 6 characters)")
+            confirm_password = st.text_input("Confirm Password", type="password", placeholder="Re-enter your password")
+            register_button = st.form_submit_button("Register", use_container_width=True)
+            
+            if register_button:
+                if not new_username or not new_password or not confirm_password:
+                    st.error("⚠️ Please fill in all fields")
+                elif new_password != confirm_password:
+                    st.error("❌ Passwords do not match!")
+                else:
+                    success, message = register_user(new_username, new_password)
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.info("👉 Click on 'Login' tab above to sign in")
+                    else:
+                        st.error(f"❌ {message}")
+        
+        st.markdown("---")
+        st.caption("Already have an account? Click 'Login' above")
+    
+    else:
+        # ==================== LOGIN FORM ====================
+        st.subheader("🔑 Login to Your Account")
+        st.markdown("Enter your credentials to access the chatbot")
+        
+        with st.form("login_form"):
+            username = st.text_input("Username", placeholder="Enter your username")
+            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            login_button = st.form_submit_button("Login", use_container_width=True)
+            
+            if login_button:
+                if not username or not password:
+                    st.error("⚠️ Please enter both username and password")
+                else:
+                    success, message = login_user(username, password)
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+        
+        st.markdown("---")
+        st.caption("Don't have an account? Click 'Register' above")
+    
     st.stop()  # Stop execution here if not authenticated
 
 # ============================================================================
