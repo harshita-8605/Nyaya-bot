@@ -33,8 +33,7 @@ def agent(query: str):
         tools=tools, 
         verbose=False, 
         handle_parsing_errors=True,
-        max_iterations=10,
-        early_stopping_method="generate"
+        max_iterations=10
     )
 
     try:

@@ -4,6 +4,17 @@ from dotenv import dotenv_values
 import streamlit as st
 from agent import agent
 
+# ============================================================================
+# Simple Authentication Configuration
+# ============================================================================
+# You can add more users here or connect to a database later
+VALID_USERS = {
+    "admin": "admin123",
+    "user": "password123",
+    "test": "test123"
+}
+# ============================================================================
+
 # Load environment variables
 try:
     ENVs = dotenv_values(".env")  # for dev env
@@ -26,11 +37,82 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ============================================================================
+# Authentication Functions
+# ============================================================================
+
+def simple_login(username: str, password: str) -> tuple[bool, str]:
+    """Simple authentication check."""
+    if username in VALID_USERS and VALID_USERS[username] == password:
+        st.session_state.auth_token = "authenticated"
+        st.session_state.username = username
+        return True, "Login successful!"
+    else:
+        return False, "Invalid username or password"
+
+
+def logout():
+    """Clear authentication and reset session."""
+    st.session_state.auth_token = None
+    st.session_state.username = None
+    st.session_state.store = []
+    st.rerun()
+
+
+# Initialize auth session state
+if "auth_token" not in st.session_state:
+    st.session_state.auth_token = None
+if "username" not in st.session_state:
+    st.session_state.username = None
+
+# ============================================================================
+# Login Gate: Show login page if not authenticated
+# ============================================================================
+
+if st.session_state.auth_token is None:
+    st.title("🔐 Nyaya-BOT Login")
+    st.markdown("Please login to access the legal assistant chatbot")
+    
+    with st.form("login_form"):
+        username = st.text_input("Username", placeholder="Enter your username")
+        password = st.text_input("Password", type="password", placeholder="Enter your password")
+        submit_button = st.form_submit_button("Login", use_container_width=True)
+        
+        if submit_button:
+            if not username or not password:
+                st.error("⚠️ Please enter both username and password")
+            else:
+                success, message = simple_login(username, password)
+                
+                if success:
+                    st.success(f"✅ {message}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {message}")
+    
+    st.markdown("---")
+    st.info("**Default credentials:**\n- Username: `admin` / Password: `admin123`\n- Username: `user` / Password: `password123`")
+    st.stop()  # Stop execution here if not authenticated
+
+# ============================================================================
+# Main Chatbot UI (Only shown after successful login)
+# ============================================================================
+
 st.title("Nyaya-BOT⚖️")
 
 # Sidebar for settings
 with st.sidebar:
     st.header("Configuration⚙️")
+    
+    # User info
+    st.subheader("👤 User Session")
+    st.write(f"**Logged in as:** {st.session_state.username}")
+    st.write("🟢 **Status:** Authenticated")
+    
+    if st.button("🚪 Logout", use_container_width=True):
+        logout()
+    
+    st.markdown("---")
     
     # Display current configuration
     st.subheader("Current Config:")
