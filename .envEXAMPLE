@@ -1,0 +1,9 @@
+# Environment Variables for Nyaya-Bot
+
+# Google API Key - Required for cloud-based LLM processing
+# Get your API key from https://makersuite.google.com/app/apikey
+GOOGLE_API_KEY=
+
+# HuggingFace API Key - Optional, used for embeddings
+# Get your API key from https://huggingface.co/settings/tokens
+HUGGINGFACE_API_KEY=

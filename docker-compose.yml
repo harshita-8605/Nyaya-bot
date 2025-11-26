@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  nyaya-bot:
+    build: .
+    container_name: nyaya-bot-app
+    ports:
+      - "8502:8501"
+    volumes:
+      - ./tools/data:/app/tools/data
+      - ./db:/app/db
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+    restart: unless-stopped
