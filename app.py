@@ -61,6 +61,22 @@ st.set_page_config(
 )
 
 # ============================================================================
+# Session State Initialization (persists across page refreshes)
+# ============================================================================
+# NOTE: Streamlit session_state persists in the same browser tab across refreshes
+# Users will stay logged in unless they explicitly logout or close the tab
+
+if "auth_token" not in st.session_state:
+    st.session_state.auth_token = None
+if "username" not in st.session_state:
+    st.session_state.username = None
+if "show_register" not in st.session_state:
+    st.session_state.show_register = False
+if "store" not in st.session_state:
+    st.session_state.store = []
+# ============================================================================
+
+# ============================================================================
 # Authentication Functions
 # ============================================================================
 
@@ -119,14 +135,6 @@ def logout():
     st.session_state.store = []
     st.rerun()
 
-
-# Initialize auth session state
-if "auth_token" not in st.session_state:
-    st.session_state.auth_token = None
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "show_register" not in st.session_state:
-    st.session_state.show_register = False
 
 # ============================================================================
 # Login/Registration Gate
@@ -234,10 +242,7 @@ initial_msg = """
 """
 st.markdown(initial_msg)
 
-# Initialize session state
-if "store" not in st.session_state:
-    st.session_state.store = []
-
+# Use store from session state (already initialized above)
 store = st.session_state.store
 
 # Display chat history
@@ -254,32 +259,33 @@ if prompt := st.chat_input("What is your query?"):
     # Display user message
     st.chat_message("user", avatar="🗨️").markdown(prompt)
     
-    # Show thinking message
+    # Show detailed thinking message with progress
     thinking_placeholder = st.chat_message("assistant", avatar="⚖️")
-    thinking_placeholder.markdown("Thinking...")
     
-    # Add user message to store
-    store.append(HumanMessage(content=prompt))
+    with thinking_placeholder:
+        with st.spinner("🔍 Analyzing your query..."):
+            # Add user message to store
+            store.append(HumanMessage(content=prompt))
+            
+            try:
+                # Check if Google API key is available
+                if not GOOGLE_API_KEY:
+                    response_content = "Sorry, no API key found for Google Gemini. Please set GOOGLE_API_KEY in your .env file."
+                else:
+                    response_content = agent(prompt)
+                
+                response = AIMessage(content=response_content)
+                
+            except Exception as e:
+                error_msg = f"Sorry, I encountered an error: {str(e)}"
+                if "API" in str(e).upper():
+                    error_msg += "\n\nThis might be due to API limits or network issues."
+                response = AIMessage(content=error_msg)
+            
+            # Add response to store
+            store.append(response)
     
-    try:
-        # Check if Google API key is available
-        if not GOOGLE_API_KEY:
-            response_content = "Sorry, no API key found for Google Gemini. Please set GOOGLE_API_KEY in your .env file."
-        else:
-            response_content = agent(prompt)
-        
-        response = AIMessage(content=response_content)
-        
-    except Exception as e:
-        error_msg = f"Sorry, I encountered an error: {str(e)}"
-        if "API" in str(e).upper():
-            error_msg += "\n\nThis might be due to API limits or network issues."
-        response = AIMessage(content=error_msg)
-    
-    # Add response to store
-    store.append(response)
-    
-    # Update the thinking message with actual response
+    # Update with final response
     thinking_placeholder.markdown(response.content)
 
 # Footer
@@ -289,6 +295,6 @@ st.markdown(
     <div style='text-align: center; color: gray; font-size: 12px;'>
         💡 Powered by Google Gemini for fast and reliable legal assistance
     </div>
-    """, 
-    unsafe_allow_html=True
+    """,
+    unsafe_allow_html=True,
 )
