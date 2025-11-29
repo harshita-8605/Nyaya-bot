@@ -10,6 +10,7 @@ from langchain.embeddings import CacheBackedEmbeddings
 from langchain.storage import LocalFileStore
 import os
 import threading
+from typing import List
 
 
 _embed_lock = threading.Lock()
@@ -58,30 +59,46 @@ def _load_or_build_faiss(index_dir: str, pdf_path: str):
 
 @tool
 def indian_constitution_pdf_query(query: str) -> str:
-    """Returns a related answer from the Indian Constitution PDF using semantic search from input query"""
-    
+    """Retrieve relevant constitution passages. Returns plain text blocks joined for agent consumption."""
     global _db_constitution
     if _db_constitution is None:
         _db_constitution = _load_or_build_faiss("db/faiss_index_constitution", "tools/data/constitution.pdf")
 
     retriever = _db_constitution.as_retriever(search_kwargs={"k": 3})
-    result = retriever.invoke(query)
-
-    return result
+    docs = retriever.invoke(query)
+    try:
+        # docs may be a list of Document objects
+        passages: List[str] = []
+        for d in docs:
+            content = getattr(d, "page_content", str(d))
+            # Trim overly long passages for efficiency
+            if len(content) > 1200:
+                content = content[:1200] + "..."
+            passages.append(content.strip())
+        return "\n\n---\n".join(passages)
+    except Exception:
+        return str(docs)
 
 
 @tool
 def indian_laws_pdf_query(query: str) -> str:
-    """Returns a related answer from the "THE BHARATIYA NYAYA (SECOND) SANHITA, 2023" PDF which states all of the laws of India, using semantic search from input query"""
-    
+    """Retrieve relevant BNS (laws) passages. Returns plain text blocks joined for agent consumption."""
     global _db_bns
     if _db_bns is None:
         _db_bns = _load_or_build_faiss("db/faiss_index_bns", "tools/data/BNS.pdf")
 
     retriever = _db_bns.as_retriever(search_kwargs={"k": 3})
-    result = retriever.invoke(query)
-
-    return result
+    docs = retriever.invoke(query)
+    try:
+        passages: List[str] = []
+        for d in docs:
+            content = getattr(d, "page_content", str(d))
+            if len(content) > 1200:
+                content = content[:1200] + "..."
+            passages.append(content.strip())
+        return "\n\n---\n".join(passages)
+    except Exception:
+        return str(docs)
 
 
 # Enhanced versions with QA chain support (optional)
