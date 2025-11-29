@@ -143,12 +143,38 @@ def save_users(users_dict):
 # ============================================================================
 
 # Load environment variables
-try:
-    ENVs = dotenv_values(".env")  # for dev env
-    GOOGLE_API_KEY = ENVs.get("GOOGLE_API_KEY", "")
-except:
-    ENVs = st.secrets  # for streamlit deployment
-    GOOGLE_API_KEY = ENVs.get("GOOGLE_API_KEY", "")
+def _merged_env():
+    # Read .env first
+    local_env = {}
+    try:
+        local_env = dotenv_values(".env") or {}
+    except Exception:
+        local_env = {}
+    # Overlay Streamlit secrets for any missing or empty values
+    secrets_env = {}
+    try:
+        secrets_env = dict(st.secrets) if hasattr(st, "secrets") else {}
+    except Exception:
+        secrets_env = {}
+
+    def pick(key: str, default: str = ""):
+        v = local_env.get(key)
+        if v is None or str(v).strip() == "":
+            v = secrets_env.get(key, default)
+        return v
+
+    return {
+        "GOOGLE_API_KEY": pick("GOOGLE_API_KEY"),
+        "HUGGINGFACE_API_KEY": pick("HUGGINGFACE_API_KEY"),
+        "GITHUB_TOKEN": pick("GITHUB_TOKEN"),
+        "GITHUB_REPO": pick("GITHUB_REPO", "harshita-8605/Nyaya-bot"),
+        "GITHUB_BRANCH": pick("GITHUB_BRANCH", "main"),
+        "JWT_SECRET": pick("JWT_SECRET"),
+        "PASSWORD_SALT": pick("PASSWORD_SALT", "nyaya-salt"),
+    }
+
+ENVs = _merged_env()
+GOOGLE_API_KEY = ENVs.get("GOOGLE_API_KEY", "")
 
 # Inject optional secrets
 GITHUB_TOKEN = ENVs.get("GITHUB_TOKEN")
