@@ -38,8 +38,8 @@ def _get_agent_executor():
             tools=tools,
             verbose=False,
             handle_parsing_errors=True,
-            max_iterations=6,  # allow a few more reasoning steps
-            max_execution_time=55  # modestly higher timeout
+            max_iterations=10,  # increased for deeper reasoning
+            max_execution_time=70  # allow proportionally more time
         )
     
     return _cached_agent_executor
