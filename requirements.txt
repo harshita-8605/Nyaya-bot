@@ -85,12 +85,12 @@ streamlit==1.38.0
 sympy==1.13.3
 tenacity==8.5.0
 threadpoolctl==3.5.0
-tokenizers==0.20.1
+tokenizers>=0.19.1,<0.20
 toml==0.10.2
 torch @ https://download.pytorch.org/whl/cpu/torch-2.9.1%2Bcpu-cp313-cp313-manylinux_2_28_x86_64.whl
 tornado==6.4.1
 tqdm==4.66.5
-transformers==4.44.2
+transformers>=4.44.2
 typing-inspect==0.9.0
 typing_extensions==4.12.2
 tzdata==2024.1
