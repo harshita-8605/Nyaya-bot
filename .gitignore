@@ -29,3 +29,16 @@ docker-compose.override.yml
 
 # OS
 Thumbs.db
+
+# App secrets and user data
+users.json
+streamlit_secrets.toml
+secrets.toml
+
+# LangChain & cache stores (if any local caches)
+.cache/
+cache/
+
+# Generated indexes (optional: keep tracked if needed)
+# Uncomment to ignore indexes; currently kept via /db mount
+# db/faiss_index_*/
