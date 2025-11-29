@@ -40,7 +40,7 @@ langchain-google-genai==2.0.0
 langchain-huggingface==0.1.0
 langchain-text-splitters
 langsmith
-markdown-it-py==3.0.0
+markdown-it-py>=3.0.0
 MarkupSafe==2.1.5
 marshmallow==3.22.0
 mdurl==0.1.2
