@@ -106,7 +106,7 @@ def indian_laws_pdf_query(query: str) -> str:
 def indian_constitution_pdf_query_with_qa(query: str) -> str:
     """Returns a processed answer from the Indian Constitution PDF using semantic search and QA chain"""
     
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash")
     embeddings_model = _get_embeddings()
 
     db = _load_or_build_faiss("db/faiss_index_constitution", "tools/data/constitution.pdf")
@@ -128,7 +128,7 @@ def indian_constitution_pdf_query_with_qa(query: str) -> str:
 def indian_laws_pdf_query_with_qa(query: str) -> str:
     """Returns a processed answer from the BNS PDF using semantic search and QA chain"""
     
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash")
     embeddings_model = _get_embeddings()
 
     db = _load_or_build_faiss("db/faiss_index_bns", "tools/data/BNS.pdf")

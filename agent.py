@@ -19,7 +19,7 @@ def _get_agent_executor():
         
         # Use Google Gemini for cloud LLM
         _cached_llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             temperature=0.3,
             timeout=30
         )
@@ -61,7 +61,7 @@ def agent(query: str):
             const_passages = indian_constitution_pdf_query(q)
             law_passages = indian_laws_pdf_query(q)
             context = f"Constitution References:\n{const_passages}\n\nLaw References:\n{law_passages}"[:6000]
-            synthesis_llm = _cached_llm or ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.2)
+            synthesis_llm = _cached_llm or ChatGoogleGenerativeAI(model="gemini-3.6-flash", temperature=0.2)
             prompt = (
                 "You are a legal assistant for Indian law. Using ONLY the provided excerpts, "
                 "answer the user's question clearly. If information is insufficient, say so.\n\n" \
