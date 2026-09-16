@@ -7,3 +7,19 @@ GOOGLE_API_KEY=
 # HuggingFace API Key - Optional, used for embeddings
 # Get your API key from https://huggingface.co/settings/tokens
 HUGGINGFACE_API_KEY=
+
+# ============================================================================
+# Streamlit Native OAuth (Google) - Configure in .streamlit/secrets.toml
+# ============================================================================
+# Google OAuth Setup:
+# 1. Go to https://console.cloud.google.com/apis/credentials
+# 2. Create OAuth 2.0 Client ID (Web application)
+# 3. Add Authorized redirect URIs:
+#    - Local: http://localhost:8501/oauth2callback
+#    - Production: https://<your-app>.streamlit.app/oauth2callback
+# 4. Copy Client ID and Client Secret to .streamlit/secrets.toml
+#
+# [auth.google]
+# client_id = "xxx.apps.googleusercontent.com"
+# client_secret = "xxx"
+# redirect_uri = "http://localhost:8501/oauth2callback"
