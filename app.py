@@ -58,13 +58,35 @@ if "store" not in st.session_state:
 # ============================================================================
 # Authentication Gate - Streamlit Native OAuth
 # ============================================================================
-if not st.user.is_logged_in:
+# if not st.user.is_logged_in:
+#     st.title("🔐 Nyaya-BOT Authentication")
+#     st.markdown("Sign in with Google to access your legal assistant")
+    
+#     if st.button("🔑 Sign in with Google", use_container_width=True, type="primary"):
+#         st.login("google")
+    
+#     st.markdown("---")
+#     st.caption("By signing in, you agree to our Terms of Service and Privacy Policy")
+#     st.stop()
+# ============================================================
+# Authentication Gate - Streamlit Native OAuth
+# ============================================================
+
+try:
+    logged_in = st.user.is_logged_in
+except Exception as e:
+    st.error(f"AUTH ERROR: {type(e).__name__}: {e}")
+    st.write("Streamlit version:", st.__version__)
+    st.write("Auth configured:", "auth" in st.secrets)
+    st.stop()
+
+if not logged_in:
     st.title("🔐 Nyaya-BOT Authentication")
     st.markdown("Sign in with Google to access your legal assistant")
-    
+
     if st.button("🔑 Sign in with Google", use_container_width=True, type="primary"):
         st.login("google")
-    
+
     st.markdown("---")
     st.caption("By signing in, you agree to our Terms of Service and Privacy Policy")
     st.stop()
