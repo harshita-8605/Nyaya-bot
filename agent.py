@@ -81,6 +81,12 @@ _LEGAL_ABBREVIATIONS = {
     "CPC": "Code of Civil Procedure, 1908",
 }
 
+_RAPE_TERMS = re.compile(
+    r"\b(?:rape|sexual assault|sexual violence|molestation|"
+    r"file an FIR|file a complaint|rape complaint)\b",
+    flags=re.IGNORECASE,
+)
+
 
 def _abbreviation_answer(query: str) -> str | None:
     """Answer standard legal abbreviation expansion questions directly."""
@@ -101,12 +107,45 @@ def _abbreviation_answer(query: str) -> str | None:
     return f"{canonical} stands for **{_LEGAL_ABBREVIATIONS[canonical]}**."
 
 
+def _sexual_violence_procedure_answer(query: str) -> str | None:
+    """Provide immediate safety and reporting guidance for urgent questions."""
+    if not _RAPE_TERMS.search(query):
+        return None
+
+    return (
+        "**If this concerns an immediate danger, call 112 now.**\n\n"
+        "For a rape or sexual-assault complaint in India:\n"
+        "1. Go to the nearest police station, or call 112. You can ask to "
+        "register a **Zero FIR** even if the incident occurred in another "
+        "jurisdiction. Ask for a free copy of the FIR and note its number.\n"
+        "2. Tell the officer what happened in your own words. Request a woman "
+        "police officer where possible and ask for an interpreter or support "
+        "person if needed.\n"
+        "3. Seek urgent medical care. Medical examination should be conducted "
+        "with informed consent; preserve clothing or other evidence if safe, "
+        "but do not delay urgent treatment.\n"
+        "4. If the police refuse to record the complaint, ask for the refusal "
+        "in writing and contact the senior police officer or a magistrate. "
+        "Free legal aid is available through NALSA at **15100**.\n"
+        "5. If the survivor is a child, contact **1098** and mention that "
+        "child-protection procedures under POCSO may apply.\n\n"
+        "This is general information, not a substitute for advice from a "
+        "qualified lawyer or support professional. Do not share identifying "
+        "details here."
+    )
+
+
 def stream_agent(query: str):
     """Yield the answer incrementally after one parallel retrieval pass."""
     try:
         abbreviation_answer = _abbreviation_answer(query)
         if abbreviation_answer:
             yield abbreviation_answer
+            return
+
+        procedure_answer = _sexual_violence_procedure_answer(query)
+        if procedure_answer:
+            yield procedure_answer
             return
 
         context = _retrieve_context(query)
@@ -122,7 +161,15 @@ def stream_agent(query: str):
             if isinstance(content, str) and content:
                 yield content
     except Exception as error:
+        error_text = str(error).lower()
         print(f"Streaming query failed: {type(error).__name__}: {error}")
+        if any(term in error_text for term in ("quota", "resource_exhausted", "rate limit")):
+            yield (
+                "Gemini is temporarily unavailable because the API quota has been "
+                "exhausted. Please try again after the quota resets. For urgent "
+                "safety concerns, call 112."
+            )
+            return
         yield "Sorry, I encountered an error while processing your query. Please try rephrasing it."
 
 
