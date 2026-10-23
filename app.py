@@ -2,7 +2,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 import os
 from dotenv import dotenv_values
 import streamlit as st
-from agent import stream_agent
+from agent import get_latency_metrics, stream_agent
 from tools.pdf_query_tools import warmup_retrieval
 
 # ============================================================================
@@ -155,6 +155,7 @@ if prompt := st.chat_input("What is your query?"):
             response_content = st.write_stream(stream_agent(prompt))
 
     store.append(AIMessage(content=response_content))
+    print(f"latency_metrics={get_latency_metrics()}")
 
 # Footer
 st.markdown("---")

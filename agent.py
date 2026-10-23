@@ -7,10 +7,49 @@ import warnings
 import time
 from concurrent.futures import ThreadPoolExecutor
 import re
+import threading
 
 # Cache LLM instance to avoid recreation
 _cached_llm = None
 _cached_agent_executor = None
+_latency_lock = threading.Lock()
+_latency_samples = {
+    "retrieval_ms": [],
+    "time_to_first_token_ms": [],
+    "model_ms": [],
+    "total_ms": [],
+}
+
+
+def _record_latency(metric: str, value_ms: float) -> None:
+    with _latency_lock:
+        samples = _latency_samples[metric]
+        samples.append(round(value_ms, 2))
+        del samples[:-1000]
+
+
+def _percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    rank = (len(ordered) - 1) * percentile
+    lower = int(rank)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = rank - lower
+    return round(ordered[lower] + (ordered[upper] - ordered[lower]) * fraction, 2)
+
+
+def get_latency_metrics() -> dict[str, dict[str, float | int | None]]:
+    """Return current-process request counts and p50/p95 latency."""
+    with _latency_lock:
+        return {
+            metric: {
+                "count": len(values),
+                "p50_ms": _percentile(values, 0.50),
+                "p95_ms": _percentile(values, 0.95),
+            }
+            for metric, values in _latency_samples.items()
+        }
 
 
 def _get_llm():
@@ -137,18 +176,29 @@ def _sexual_violence_procedure_answer(query: str) -> str | None:
 
 def stream_agent(query: str):
     """Yield the answer incrementally after one parallel retrieval pass."""
+    request_start = time.perf_counter()
     try:
         abbreviation_answer = _abbreviation_answer(query)
         if abbreviation_answer:
+            elapsed_ms = (time.perf_counter() - request_start) * 1000
+            _record_latency("time_to_first_token_ms", elapsed_ms)
+            _record_latency("total_ms", elapsed_ms)
             yield abbreviation_answer
             return
 
         procedure_answer = _sexual_violence_procedure_answer(query)
         if procedure_answer:
+            elapsed_ms = (time.perf_counter() - request_start) * 1000
+            _record_latency("time_to_first_token_ms", elapsed_ms)
+            _record_latency("total_ms", elapsed_ms)
             yield procedure_answer
             return
 
+        retrieval_start = time.perf_counter()
         context = _retrieve_context(query)
+        _record_latency(
+            "retrieval_ms", (time.perf_counter() - retrieval_start) * 1000
+        )
         prompt = (
             "You are a careful legal assistant for Indian law. Answer the user's "
             "question using only the supplied excerpts. Be concise but helpful. "
@@ -156,12 +206,23 @@ def stream_agent(query: str):
             "Do not invent sections, citations, or legal advice.\n\n"
             f"Question: {query}\n\nExcerpts:\n{context}\n\nAnswer:"
         )
+        model_start = time.perf_counter()
+        first_token_recorded = False
         for chunk in _get_llm().stream(prompt):
             content = getattr(chunk, "content", "")
             if isinstance(content, str) and content:
+                if not first_token_recorded:
+                    _record_latency(
+                        "time_to_first_token_ms",
+                        (time.perf_counter() - request_start) * 1000,
+                    )
+                    first_token_recorded = True
                 yield content
+        _record_latency("model_ms", (time.perf_counter() - model_start) * 1000)
+        _record_latency("total_ms", (time.perf_counter() - request_start) * 1000)
     except Exception as error:
         error_text = str(error).lower()
+        _record_latency("total_ms", (time.perf_counter() - request_start) * 1000)
         print(f"Streaming query failed: {type(error).__name__}: {error}")
         if any(term in error_text for term in ("quota", "resource_exhausted", "rate limit")):
             yield (
