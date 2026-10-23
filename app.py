@@ -30,17 +30,22 @@ def _merged_env():
 
     return {
         "GOOGLE_API_KEY": pick("GOOGLE_API_KEY"),
+        "GROQ_API_KEY": pick("GROQ_API_KEY"),
         "HUGGINGFACE_API_KEY": pick("HUGGINGFACE_API_KEY"),
+        "LLM_PROVIDER": pick("LLM_PROVIDER", "gemini"),
+        "LLM_MODEL": pick("LLM_MODEL"),
+        "LLM_TEMPERATURE": pick("LLM_TEMPERATURE", "0.3"),
+        "LLM_TIMEOUT_SECONDS": pick("LLM_TIMEOUT_SECONDS", "30"),
+        "OLLAMA_BASE_URL": pick("OLLAMA_BASE_URL"),
     }
 
 ENVs = _merged_env()
 GOOGLE_API_KEY = ENVs.get("GOOGLE_API_KEY", "")
 
 # Set environment variables
-if GOOGLE_API_KEY:
-    os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-if ENVs.get("HUGGINGFACE_API_KEY"):
-    os.environ["HUGGINGFACE_API_KEY"] = ENVs["HUGGINGFACE_API_KEY"]
+for key, value in ENVs.items():
+    if value:
+        os.environ[key] = str(value)
 
 # Configure Streamlit
 st.set_page_config(
@@ -115,8 +120,8 @@ with st.sidebar:
     
     # Display current configuration
     st.subheader("Current Config:")
-    st.write(f"**Provider:** Google Gemini (Cloud)")
-    st.write(f"**Model:** gemini-3.6-flash")
+    st.write(f"**Provider:** {os.environ.get('LLM_PROVIDER', 'gemini')}")
+    st.write(f"**Model:** {os.environ.get('LLM_MODEL') or 'provider default'}")
 
 # Main content
 initial_msg = """
@@ -148,8 +153,16 @@ if prompt := st.chat_input("What is your query?"):
     
     with thinking_placeholder:
         store.append(HumanMessage(content=prompt))
-        if not GOOGLE_API_KEY:
-            response_content = "Sorry, no API key found for Google Gemini. Please set GOOGLE_API_KEY in your .env file."
+        provider = os.environ.get("LLM_PROVIDER", "gemini").lower()
+        provider_key = {
+            "gemini": "GOOGLE_API_KEY",
+            "groq": "GROQ_API_KEY",
+        }.get(provider)
+        if provider_key and not os.environ.get(provider_key):
+            response_content = (
+                f"No API key found for the configured {provider} provider. "
+                f"Set {provider_key} in Streamlit secrets or your .env file."
+            )
             st.markdown(response_content)
         else:
             response_content = st.write_stream(stream_agent(prompt))

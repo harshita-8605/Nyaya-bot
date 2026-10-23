@@ -1,12 +1,10 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import create_react_agent, AgentExecutor
-from langchain_core.output_parsers import StrOutputParser
 from tools.react_prompt_template import get_prompt_template
 from tools.pdf_query_tools import indian_constitution_pdf_query, indian_laws_pdf_query
 import warnings
 import time
+import os
 from concurrent.futures import ThreadPoolExecutor
-import re
 import threading
 
 # Cache LLM instance to avoid recreation
@@ -53,15 +51,47 @@ def get_latency_metrics() -> dict[str, dict[str, float | int | None]]:
 
 
 def _get_llm():
-    """Return the shared Gemini client used for answer synthesis."""
+    """Create the configured cloud or local chat model."""
     global _cached_llm
     if _cached_llm is None:
         warnings.filterwarnings("ignore", category=FutureWarning)
-        _cached_llm = ChatGoogleGenerativeAI(
-            model="gemini-3.6-flash",
-            temperature=0.3,
-            timeout=30,
-        )
+        provider = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
+        model = os.getenv("LLM_MODEL", "").strip()
+        temperature = float(os.getenv("LLM_TEMPERATURE", "0.3"))
+        timeout = int(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
+
+        if provider == "groq":
+            from langchain_groq import ChatGroq
+
+            _cached_llm = ChatGroq(
+                model=model or "llama-3.1-8b-instant",
+                temperature=temperature,
+                timeout=timeout,
+            )
+        elif provider == "ollama":
+            from langchain_ollama import ChatOllama
+
+            _cached_llm = ChatOllama(
+                model=model or "llama3.1:8b",
+                base_url=os.getenv(
+                    "OLLAMA_BASE_URL", "http://localhost:11434"
+                ),
+                temperature=temperature,
+                timeout=int(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
+            )
+        elif provider == "gemini":
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            _cached_llm = ChatGoogleGenerativeAI(
+                model=model or "gemini-3.6-flash",
+                temperature=temperature,
+                timeout=timeout,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported LLM_PROVIDER '{provider}'. "
+                "Use gemini, groq, or ollama."
+            )
     return _cached_llm
 
 def _get_agent_executor():
@@ -111,89 +141,10 @@ def _retrieve_context(query: str) -> str:
     )[:7000]
 
 
-_LEGAL_ABBREVIATIONS = {
-    "BNS": "Bharatiya Nyaya Sanhita, 2023",
-    "BNSS": "Bharatiya Nagarik Suraksha Sanhita, 2023",
-    "BSA": "Bharatiya Sakshya Adhiniyam, 2023",
-    "IPC": "Indian Penal Code, 1860",
-    "CrPC": "Code of Criminal Procedure, 1973",
-    "CPC": "Code of Civil Procedure, 1908",
-}
-
-_RAPE_TERMS = re.compile(
-    r"\b(?:rape|sexual assault|sexual violence|molestation|"
-    r"file an FIR|file a complaint|rape complaint)\b",
-    flags=re.IGNORECASE,
-)
-
-
-def _abbreviation_answer(query: str) -> str | None:
-    """Answer standard legal abbreviation expansion questions directly."""
-    match = re.search(
-        r"\b(?:full\s+form\s+of|meaning\s+of)\s+(?:the\s+)?"
-        r"(BNS|BNSS|BSA|IPC|CrPC|CPC)\b|"
-        r"\b(?:what\s+does\s+)?(BNS|BNSS|BSA|IPC|CrPC|CPC)\s+stand\s+for\b",
-        query,
-        flags=re.IGNORECASE,
-    )
-    if not match:
-        return None
-
-    abbreviation = next(group for group in match.groups() if group is not None)
-    canonical = next(
-        key for key in _LEGAL_ABBREVIATIONS if key.lower() == abbreviation.lower()
-    )
-    return f"{canonical} stands for **{_LEGAL_ABBREVIATIONS[canonical]}**."
-
-
-def _sexual_violence_procedure_answer(query: str) -> str | None:
-    """Provide immediate safety and reporting guidance for urgent questions."""
-    if not _RAPE_TERMS.search(query):
-        return None
-
-    return (
-        "**If this concerns an immediate danger, call 112 now.**\n\n"
-        "For a rape or sexual-assault complaint in India:\n"
-        "1. Go to the nearest police station, or call 112. You can ask to "
-        "register a **Zero FIR** even if the incident occurred in another "
-        "jurisdiction. Ask for a free copy of the FIR and note its number.\n"
-        "2. Tell the officer what happened in your own words. Request a woman "
-        "police officer where possible and ask for an interpreter or support "
-        "person if needed.\n"
-        "3. Seek urgent medical care. Medical examination should be conducted "
-        "with informed consent; preserve clothing or other evidence if safe, "
-        "but do not delay urgent treatment.\n"
-        "4. If the police refuse to record the complaint, ask for the refusal "
-        "in writing and contact the senior police officer or a magistrate. "
-        "Free legal aid is available through NALSA at **15100**.\n"
-        "5. If the survivor is a child, contact **1098** and mention that "
-        "child-protection procedures under POCSO may apply.\n\n"
-        "This is general information, not a substitute for advice from a "
-        "qualified lawyer or support professional. Do not share identifying "
-        "details here."
-    )
-
-
 def stream_agent(query: str):
     """Yield the answer incrementally after one parallel retrieval pass."""
     request_start = time.perf_counter()
     try:
-        abbreviation_answer = _abbreviation_answer(query)
-        if abbreviation_answer:
-            elapsed_ms = (time.perf_counter() - request_start) * 1000
-            _record_latency("time_to_first_token_ms", elapsed_ms)
-            _record_latency("total_ms", elapsed_ms)
-            yield abbreviation_answer
-            return
-
-        procedure_answer = _sexual_violence_procedure_answer(query)
-        if procedure_answer:
-            elapsed_ms = (time.perf_counter() - request_start) * 1000
-            _record_latency("time_to_first_token_ms", elapsed_ms)
-            _record_latency("total_ms", elapsed_ms)
-            yield procedure_answer
-            return
-
         retrieval_start = time.perf_counter()
         context = _retrieve_context(query)
         _record_latency(
@@ -226,9 +177,8 @@ def stream_agent(query: str):
         print(f"Streaming query failed: {type(error).__name__}: {error}")
         if any(term in error_text for term in ("quota", "resource_exhausted", "rate limit")):
             yield (
-                "Gemini is temporarily unavailable because the API quota has been "
-                "exhausted. Please try again after the quota resets. For urgent "
-                "safety concerns, call 112."
+                "The configured language model is temporarily unavailable because "
+                "its API quota or rate limit was exhausted. Please try again later."
             )
             return
         yield "Sorry, I encountered an error while processing your query. Please try rephrasing it."
