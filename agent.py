@@ -6,6 +6,7 @@ from tools.pdf_query_tools import indian_constitution_pdf_query, indian_laws_pdf
 import warnings
 import time
 from concurrent.futures import ThreadPoolExecutor
+import re
 
 # Cache LLM instance to avoid recreation
 _cached_llm = None
@@ -71,9 +72,43 @@ def _retrieve_context(query: str) -> str:
     )[:7000]
 
 
+_LEGAL_ABBREVIATIONS = {
+    "BNS": "Bharatiya Nyaya Sanhita, 2023",
+    "BNSS": "Bharatiya Nagarik Suraksha Sanhita, 2023",
+    "BSA": "Bharatiya Sakshya Adhiniyam, 2023",
+    "IPC": "Indian Penal Code, 1860",
+    "CrPC": "Code of Criminal Procedure, 1973",
+    "CPC": "Code of Civil Procedure, 1908",
+}
+
+
+def _abbreviation_answer(query: str) -> str | None:
+    """Answer standard legal abbreviation expansion questions directly."""
+    match = re.search(
+        r"\b(?:full\s+form\s+of|meaning\s+of)\s+(?:the\s+)?"
+        r"(BNS|BNSS|BSA|IPC|CrPC|CPC)\b|"
+        r"\b(?:what\s+does\s+)?(BNS|BNSS|BSA|IPC|CrPC|CPC)\s+stand\s+for\b",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    abbreviation = next(group for group in match.groups() if group is not None)
+    canonical = next(
+        key for key in _LEGAL_ABBREVIATIONS if key.lower() == abbreviation.lower()
+    )
+    return f"{canonical} stands for **{_LEGAL_ABBREVIATIONS[canonical]}**."
+
+
 def stream_agent(query: str):
     """Yield the answer incrementally after one parallel retrieval pass."""
     try:
+        abbreviation_answer = _abbreviation_answer(query)
+        if abbreviation_answer:
+            yield abbreviation_answer
+            return
+
         context = _retrieve_context(query)
         prompt = (
             "You are a careful legal assistant for Indian law. Answer the user's "
