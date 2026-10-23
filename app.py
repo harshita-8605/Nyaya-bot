@@ -2,7 +2,8 @@ from langchain_core.messages import HumanMessage, AIMessage
 import os
 from dotenv import dotenv_values
 import streamlit as st
-from agent import agent
+from agent import stream_agent
+from tools.pdf_query_tools import warmup_retrieval
 
 # ============================================================================
 # Load environment variables
@@ -58,29 +59,22 @@ if "store" not in st.session_state:
 # ============================================================================
 # Authentication Gate - Streamlit Native OAuth
 # ============================================================================
-# if not st.user.is_logged_in:
-#     st.title("🔐 Nyaya-BOT Authentication")
-#     st.markdown("Sign in with Google to access your legal assistant")
-    
-#     if st.button("🔑 Sign in with Google", use_container_width=True, type="primary"):
-#         st.login("google")
-    
-#     st.markdown("---")
-#     st.caption("By signing in, you agree to our Terms of Service and Privacy Policy")
-#     st.stop()
-# ============================================================
-# Authentication Gate - Streamlit Native OAuth
-# ============================================================
-
 try:
-    logged_in = st.user.is_logged_in
-except Exception as e:
-    st.error(f"AUTH ERROR: {type(e).__name__}: {e}")
-    st.write("Streamlit version:", st.__version__)
-    st.write("Auth configured:", "auth" in st.secrets)
-    st.stop()
+    auth_configured = bool(st.secrets.get("auth"))
+except Exception:
+    auth_configured = False
 
-if not logged_in:
+if not auth_configured:
+    logged_in = True
+else:
+    try:
+        logged_in = st.user.is_logged_in
+    except Exception as error:
+        st.error(f"AUTH ERROR: {type(error).__name__}: {error}")
+        st.write("Streamlit version:", st.__version__)
+        st.stop()
+
+if auth_configured and not logged_in:
     st.title("🔐 Nyaya-BOT Authentication")
     st.markdown("Sign in with Google to access your legal assistant")
 
@@ -90,6 +84,13 @@ if not logged_in:
     st.markdown("---")
     st.caption("By signing in, you agree to our Terms of Service and Privacy Policy")
     st.stop()
+
+# Preload retrieval resources in this Streamlit process so the first query
+# does not pay the embedding-model startup cost.
+try:
+    warmup_retrieval()
+except Exception as error:
+    print(f"Retrieval warmup warning: {type(error).__name__}: {error}")
 
 # ============================================================================
 # Main Chatbot UI (Only shown after successful login)
@@ -103,10 +104,11 @@ with st.sidebar:
     
     # User info
     st.subheader("👤 User Session")
-    st.write(f"**Logged in as:** {st.user.email}")
+    user_email = getattr(st.user, "email", "Local development session")
+    st.write(f"**Logged in as:** {user_email}")
     st.write("🟢 **Status:** Authenticated")
     
-    if st.button("🚪 Logout", use_container_width=True):
+    if auth_configured and st.button("🚪 Logout", use_container_width=True):
         st.logout()
     
     st.markdown("---")
@@ -141,34 +143,18 @@ if prompt := st.chat_input("What is your query?"):
     # Display user message
     st.chat_message("user", avatar="🗨️").markdown(prompt)
     
-    # Show detailed thinking message with progress
+    # Stream the answer into the assistant message as Gemini produces it.
     thinking_placeholder = st.chat_message("assistant", avatar="⚖️")
     
     with thinking_placeholder:
-        with st.spinner("🔍 Analyzing your query..."):
-            # Add user message to store
-            store.append(HumanMessage(content=prompt))
-            
-            try:
-                # Check if Google API key is available
-                if not GOOGLE_API_KEY:
-                    response_content = "Sorry, no API key found for Google Gemini. Please set GOOGLE_API_KEY in your .env file."
-                else:
-                    response_content = agent(prompt)
-                
-                response = AIMessage(content=response_content)
-                
-            except Exception as e:
-                error_msg = f"Sorry, I encountered an error: {str(e)}"
-                if "API" in str(e).upper():
-                    error_msg += "\n\nThis might be due to API limits or network issues."
-                response = AIMessage(content=error_msg)
-            
-            # Add response to store
-            store.append(response)
-    
-    # Update with final response
-    thinking_placeholder.markdown(response.content)
+        store.append(HumanMessage(content=prompt))
+        if not GOOGLE_API_KEY:
+            response_content = "Sorry, no API key found for Google Gemini. Please set GOOGLE_API_KEY in your .env file."
+            st.markdown(response_content)
+        else:
+            response_content = st.write_stream(stream_agent(prompt))
+
+    store.append(AIMessage(content=response_content))
 
 # Footer
 st.markdown("---")

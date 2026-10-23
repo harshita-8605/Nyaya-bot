@@ -57,6 +57,18 @@ def _load_or_build_faiss(index_dir: str, pdf_path: str):
         return db
 
 
+def warmup_retrieval() -> None:
+    """Load the embedding model and both indexes into this app process."""
+    global _db_constitution, _db_bns
+    _get_embeddings()
+    if _db_constitution is None:
+        _db_constitution = _load_or_build_faiss(
+            "db/faiss_index_constitution", "tools/data/constitution.pdf"
+        )
+    if _db_bns is None:
+        _db_bns = _load_or_build_faiss("db/faiss_index_bns", "tools/data/BNS.pdf")
+
+
 @tool
 def indian_constitution_pdf_query(query: str) -> str:
     """Retrieve relevant constitution passages. Returns plain text blocks joined for agent consumption."""

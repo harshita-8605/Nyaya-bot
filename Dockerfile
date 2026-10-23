@@ -27,5 +27,5 @@ EXPOSE 8501
 # Health check
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
 
-# Run warmup in background, then start the application
-CMD python warmup.py & streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+# The app warms retrieval resources in its own Streamlit process.
+CMD streamlit run app.py --server.port=8501 --server.address=0.0.0.0

@@ -5,10 +5,24 @@ from tools.react_prompt_template import get_prompt_template
 from tools.pdf_query_tools import indian_constitution_pdf_query, indian_laws_pdf_query
 import warnings
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 # Cache LLM instance to avoid recreation
 _cached_llm = None
 _cached_agent_executor = None
+
+
+def _get_llm():
+    """Return the shared Gemini client used for answer synthesis."""
+    global _cached_llm
+    if _cached_llm is None:
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        _cached_llm = ChatGoogleGenerativeAI(
+            model="gemini-3.6-flash",
+            temperature=0.3,
+            timeout=30,
+        )
+    return _cached_llm
 
 def _get_agent_executor():
     """Get or create cached agent executor."""
@@ -18,11 +32,7 @@ def _get_agent_executor():
         warnings.filterwarnings("ignore", category=FutureWarning)
         
         # Use Google Gemini for cloud LLM
-        _cached_llm = ChatGoogleGenerativeAI(
-            model="gemini-3.6-flash",
-            temperature=0.3,
-            timeout=30
-        )
+        _cached_llm = _get_llm()
         
         tools = [indian_constitution_pdf_query, indian_laws_pdf_query]
         prompt_template = get_prompt_template()
@@ -43,6 +53,42 @@ def _get_agent_executor():
         )
     
     return _cached_agent_executor
+
+
+def _retrieve_context(query: str) -> str:
+    """Retrieve from both local indexes concurrently for a single synthesis call."""
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        constitution_future = executor.submit(
+            indian_constitution_pdf_query.invoke, query
+        )
+        laws_future = executor.submit(indian_laws_pdf_query.invoke, query)
+        constitution = constitution_future.result()
+        laws = laws_future.result()
+
+    return (
+        f"Constitution references:\n{constitution}\n\n"
+        f"BNS law references:\n{laws}"
+    )[:7000]
+
+
+def stream_agent(query: str):
+    """Yield the answer incrementally after one parallel retrieval pass."""
+    try:
+        context = _retrieve_context(query)
+        prompt = (
+            "You are a careful legal assistant for Indian law. Answer the user's "
+            "question using only the supplied excerpts. Be concise but helpful. "
+            "If the excerpts do not contain enough information, say so clearly. "
+            "Do not invent sections, citations, or legal advice.\n\n"
+            f"Question: {query}\n\nExcerpts:\n{context}\n\nAnswer:"
+        )
+        for chunk in _get_llm().stream(prompt):
+            content = getattr(chunk, "content", "")
+            if isinstance(content, str) and content:
+                yield content
+    except Exception as error:
+        print(f"Streaming query failed: {type(error).__name__}: {error}")
+        yield "Sorry, I encountered an error while processing your query. Please try rephrasing it."
 
 
 def agent(query: str):
